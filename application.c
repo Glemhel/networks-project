@@ -96,43 +96,6 @@ void get_from_peers(){
     }
 }
 
-/*void asnwer_to_peers(){
-    // listen to incoming packets
-    struct sockaddr_in si_me, si_other;
-	
-	int s, i, slen = sizeof(si_other) , recv_len;
-	char buf[BUFLEN];
-	
-	//create a UDP socket
-	if ((s=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
-	{
-		die("socket");
-	}
-	
-	// zero out the structure
-	memset((char *) &si_me, 0, sizeof(si_me));
-	
-	si_me.sin_family = AF_INET;
-	si_me.sin_port = htons(PORT);
-	si_me.sin_addr.s_addr = htonl(INADDR_ANY);
-	
-	//bind socket to port
-	if(bind(s ,(struct sockaddr*)&si_me, sizeof(si_me) ) == -1)
-	{
-		die("bind");
-	}
-    for (;;){
-        if ((recv_len = recvfrom(s, buf, BUFLEN, 0, (struct sockaddr *) &si_other, &slen)) == -1)
-		{
-			die("recvfrom()");
-		}
-
-        printf("Received packet from %s:%d\n", inet_ntoa(si_other.sin_addr), ntohs(si_other.sin_port));
-		printf("Data: %s\n" , buf);
-    }
-}
-*/
-
 void recieve_requests(){
     // recvfrom(), push to the queue
     struct sockaddr_in si_me, si_other;
