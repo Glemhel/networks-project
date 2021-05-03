@@ -8,7 +8,8 @@
 
 #define BUFLEN 512	//Max length of buffer
 #define SERVER "127.0.0.1"
-#define PORT 8888	//The port on which to listen for incoming data
+#define PORT_RECIEVE 8888	//The PORT_RECIEVE on which to listen for incoming data
+#define PORT_SEND 8880	//The PORT_SEND on which to send data
 #define MAX_CLIENTS 100
 #define MAX_CHUNCKS 100
 
@@ -36,7 +37,6 @@ struct DataPacket {
     struct DataChunck data_chunck;
 };
 
-
 struct entry {
     struct DataPacket data;
     STAILQ_ENTRY(entry) entries;
@@ -45,11 +45,8 @@ struct entry {
 STAILQ_HEAD(stailhead, entry);
 struct stailhead incoming_requests, outgoing_requests;
 
-
 struct FileInfo fileinfo;
 struct NetworkInfo networkinfo;
-
-
 
 void die(char *s) {
 	perror(s);
@@ -57,8 +54,8 @@ void die(char *s) {
 }
 
 void ask_peer(int chunck, int peer){
-    // send peer a udp packet asking for a specific chunck
-    struct sockaddr_in si_other;
+  // send peer a udp packet asking for a specific chunck
+  struct sockaddr_in si_other;
 	int s, i, slen=sizeof(si_other);
 	char buf[BUFLEN];
 	char message[BUFLEN];
@@ -69,7 +66,7 @@ void ask_peer(int chunck, int peer){
 
     memset((char *) &si_other, 0, sizeof(si_other));
 	si_other.sin_family = AF_INET;
-	si_other.sin_port = htons(PORT);
+	si_other.sin_port = htons (PORT_RECIEVE);
 
     if (inet_aton(SERVER , &si_other.sin_addr) == 0) 
 	{
@@ -78,9 +75,7 @@ void ask_peer(int chunck, int peer){
 	}
     message[0] = '1';
     sendto(s, message, strlen(message) , 0 , (struct sockaddr *) &si_other, slen);
-
 }
-
 
 void get_from_peers(){
      while (fileinfo.chuncks_recieved != fileinfo.chuncks_amount){
@@ -97,8 +92,8 @@ void get_from_peers(){
 }
 
 void recieve_requests(){
-    // recvfrom(), push to the queue
-    struct sockaddr_in si_me, si_other;
+  // recvfrom(), push to the queue
+  struct sockaddr_in si_me, si_other;
 	int s, i, slen = sizeof(si_other), recv_len;
 	struct DataPacket* temp = malloc(sizeof(struct DataPacket));
 	//create a UDP socket
@@ -109,10 +104,10 @@ void recieve_requests(){
 	memset((char *) &si_me, 0, sizeof(si_me));
 	
 	si_me.sin_family = AF_INET;
-	si_me.sin_port = htons(PORT);
+	si_me.sin_port = htons (PORT_RECIEVE);
 	si_me.sin_addr.s_addr = htonl(INADDR_ANY);
 	
-	//bind socket to port
+	//bind socket to PORT_RECIEVE
 	if(bind(s ,(struct sockaddr*)&si_me, sizeof(si_me) ) == -1) {
 		die("bind");
 	}
@@ -129,13 +124,32 @@ void recieve_requests(){
     }   
 }
 
-
 void send_requests(){
-    // get head of outgoing and sendto()
+  // get head of outgoing and sendto()
+  // send peer a udp packet asking for a specific chunck
+  struct sockaddr_in si_other;
+	int s, i, slen=sizeof(si_other);
+	struct DataPacket temp;
+  if ( (s=socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1) {
+		die("socket");
+	}
+
+  memset((char *) &si_other, 0, sizeof(si_other));
+	si_other.sin_family = AF_INET;
+	si_other.sin_port = htons (PORT_RECIEVE);
+
+  if (inet_aton(SERVER , &si_other.sin_addr) == 0) {
+		fprintf(stderr, "inet_aton() failed\n");
+		exit(1);
+	}
+  
+  for (;;) {
+    while (!STAILQ_FIRST(&outgoing_requests)) {}
+    temp = STAILQ_FIRST(&outgoing_requests) -> data;
+    STAILQ_REMOVE_HEAD(&outgoing_requests, entries);
+    sendto(s, (struct DataPacket*) &temp, sizeof(temp), 0, (struct sockaddr *) &si_other, slen);
+  }
 }
-
-
-
 
 int main(void){
     pthread_t sender, reciever;
