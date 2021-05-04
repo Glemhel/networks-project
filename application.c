@@ -8,6 +8,7 @@
 
 #define BUFLEN 512 //Max length of buffer
 #define SERVER "127.0.0.1"
+#define MY_ID 1
 #define PORT_RECIEVE 8888 //The PORT_RECIEVE on which to listen for incoming data
 #define PORT_SEND 8880    //The PORT_SEND on which to send data
 #define MAX_CLIENTS 100
@@ -147,8 +148,7 @@ void send_requests()
         }
         temp = STAILQ_FIRST(&outgoing_requests)->data;
         STAILQ_REMOVE_HEAD(&outgoing_requests, entries);
-
-        if (inet_aton(temp.destination_id, &si_other.sin_addr) == 0)
+        if (inet_aton(networkinfo.peers_ip[temp.destination_id], &si_other.sin_addr) == 0)
         {
             fprintf(stderr, "inet_aton() failed\n");
             exit(1);
@@ -157,27 +157,72 @@ void send_requests()
     }
 }
 
-int main(void)
+void generate_requests()
 {
-    pthread_t sender, reciever;
-    pthread_create(&sender, NULL, send_requests, NULL);
-    pthread_create(&reciever, NULL, recieve_requests, NULL);
-    for (;;)
+    while (fileinfo.chuncks_recieved != fileinfo.chuncks_amount)
     {
-        // get from head of queue
-        // add answer to send queue
         for (int i = 0; i < fileinfo.chuncks_amount; i++)
         {
             if (fileinfo.chuncks_status[i] != 1)
             {
                 for (int j = 0; j < networkinfo.peers_number; j++)
                 {
-                    // send udp packet to ask for the packet
-                    // this should start a new thread to communicate directly with that very peer
-                    ask_peer(i, j);
+                    if (j != MY_ID)
+                    {
+                        // send packet to this peer
+                        struct DataPacket *temp = malloc(sizeof(struct DataPacket));
+                        temp->type_bit = 0;
+                        temp->source_id = MY_ID;
+                        temp->destination_id = j;
+                        temp->data_chunck.chunck_number = i;
+                        struct entry *n1;
+                        n1 = malloc(sizeof(struct entry));
+                        n1->data = *temp;
+                        STAILQ_INSERT_TAIL(&outgoing_requests, n1, entries);
+                    }
                 }
             }
         }
+    }
+}
+
+void generate_responses()
+{
+    struct DataPacket temp;
+    for (;;)
+    {
+        while (!STAILQ_FIRST(&incoming_requests))
+        {
+        }
+        temp = STAILQ_FIRST(&incoming_requests)->data;
+        STAILQ_REMOVE_HEAD(&incoming_requests, entries);
+        if (fileinfo.chuncks_status[temp.data_chunck.chunck_number] == 1)
+        {
+            // can respond
+            struct DataPacket reply;
+            reply.data_chunck.chunck_number = temp.data_chunck.chunck_number;
+            reply.source_id = MY_ID;
+            reply.destination_id = temp.source_id;
+            reply.type_bit = 1;
+            reply.data_chunck = fileinfo.data[temp.data_chunck.chunck_number];
+            struct entry *n1;
+            n1 = malloc(sizeof(struct entry));
+            n1->data = reply;
+            STAILQ_INSERT_TAIL(&outgoing_requests, n1, entries);
+        }
+    }
+}
+int main(void)
+{
+    pthread_t sender, reciever, requests_generator, response_generator;
+    pthread_create(&sender, NULL, send_requests, NULL);
+    pthread_create(&reciever, NULL, recieve_requests, NULL);
+    pthread_create(&requests_generator, NULL, generate_requests, NULL);
+    pthread_create(&response_generator, NULL, generate_responses, NULL);
+    pthread_join(generate_responses, NULL);
+    // if we are here, all chunck are got, print them
+    for (int i = 0; i < fileinfo.chuncks_amount; i++){
+        printf("%s", fileinfo.data[i].data);
     }
     return 0;
 }
