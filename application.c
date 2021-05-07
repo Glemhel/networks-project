@@ -6,13 +6,15 @@
 #include <sys/socket.h>
 #include <sys/queue.h>
 
-#define BUFLEN 512 //Max length of buffer
+#define BUFLEN 4 //Max length of string chunck
 #define SERVER "127.0.0.1"
-#define MY_ID 1
+#define SECRET "qwertyuiasdfghjk"
+#define MY_ID 0
+#define IS_SENDER 1
 #define PORT_RECIEVE 8888 //The PORT_RECIEVE on which to listen for incoming data
-#define PORT_SEND 8880    //The PORT_SEND on which to send data
+#define PORT_SEND 8889    //The PORT_SEND on which to send data
 #define MAX_CLIENTS 100
-#define MAX_CHUNCKS 100
+#define MAX_CHUNCKS 4
 
 struct NetworkInfo
 {
@@ -62,7 +64,7 @@ void die(char *s)
     perror(s);
     exit(1);
 }
-
+/*
 void ask_peer(int chunck, int peer)
 {
     // send peer a udp packet asking for a specific chunck
@@ -87,7 +89,7 @@ void ask_peer(int chunck, int peer)
     message[0] = '1';
     sendto(s, message, strlen(message), 0, (struct sockaddr *)&si_other, slen);
 }
-
+*/
 void recieve_requests()
 {
     // recvfrom(), push to the queue
@@ -145,6 +147,7 @@ void send_requests()
     {
         while (!STAILQ_FIRST(&outgoing_requests))
         {
+            pthread_yield();
         }
         temp = STAILQ_FIRST(&outgoing_requests)->data;
         STAILQ_REMOVE_HEAD(&outgoing_requests, entries);
@@ -193,6 +196,7 @@ void generate_responses()
     {
         while (!STAILQ_FIRST(&incoming_requests))
         {
+            pthread_yield();
         }
         temp = STAILQ_FIRST(&incoming_requests)->data;
         STAILQ_REMOVE_HEAD(&incoming_requests, entries);
@@ -214,6 +218,38 @@ void generate_responses()
 }
 int main(void)
 {
+    // Network info init
+    networkinfo.peers_number = 2;
+    networkinfo.peers_ip[0] = "192.168.1.62";
+    networkinfo.peers_ip[1] = "192.168.1.70";
+    if (IS_SENDER){
+        // fill the array of data
+        fileinfo.file_size = 16;
+        fileinfo.chuncks_amount = 4;
+        for (int i = 0; i < 4; i++){
+            fileinfo.chuncks_status[i] = 1;
+        }
+        fileinfo.chuncks_recieved = 4;
+        for (int i = 0; i < 4; i++){
+            fileinfo.data[i].chunck_number = i;
+            for (int j = 0; j < BUFLEN; j++){
+                fileinfo.data[i].data[j] = SECRET[i * 4 + j];
+            }
+        }
+    } else {
+        fileinfo.file_size = 16;
+        fileinfo.chuncks_amount = 4;
+        for (int i = 0; i < 4; i++){
+            fileinfo.chuncks_status[i] = 0;
+        }
+        fileinfo.chuncks_recieved = 0;
+        for (int i = 0; i < 4; i++){
+            fileinfo.data[i].chunck_number = i;
+            for (int j = 0; j < BUFLEN; j++){
+                fileinfo.data[i].data[j] = '#';
+            }
+        }
+    }
     pthread_t sender, reciever, requests_generator, response_generator;
     pthread_create(&sender, NULL, send_requests, NULL);
     pthread_create(&reciever, NULL, recieve_requests, NULL);
