@@ -1,20 +1,21 @@
 #define _GNU_SOURCE
 
 #include <stdio.h>
+#include <stddef.h>
 #include <string.h>
 #include <stdlib.h>
 #include <pthread.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
-#include <sys/queue.h>                                                           
-#include <unistd.h>   
+#include <sys/queue.h>
+#include <unistd.h>
 
 #define BUFLEN 4 //Max length of string chunck
 #define SERVER "127.0.0.1"
 #define SECRET "qwertyuiasdfghjk"
-#define MY_ID 0
-#define IS_SENDER 1
-#define PORT_RECIEVE 8889 //The PORT_RECIEVE on which to listen for incoming data
+#define MY_ID 1
+#define IS_SENDER 0
+#define PORT_RECIEVE 8080 //The PORT_RECIEVE on which to listen for incoming data
 #define PORT_SEND 8889    //The PORT_SEND on which to send data
 #define MAX_CLIENTS 2
 #define MAX_CHUNCKS 4
@@ -57,6 +58,7 @@ struct entry
 };
 
 STAILQ_HEAD(stailhead, entry);
+
 struct stailhead incoming_requests, outgoing_requests;
 
 struct FileInfo fileinfo;
@@ -93,7 +95,7 @@ void ask_peer(int chunck, int peer)
     sendto(s, message, strlen(message), 0, (struct sockaddr *)&si_other, slen);
 }
 */
-void* recieve_requests()
+void *recieve_requests()
 {
     // recvfrom(), push to the queue
     struct sockaddr_in si_me, si_other;
@@ -109,6 +111,7 @@ void* recieve_requests()
 
     si_me.sin_family = AF_INET;
     si_me.sin_port = htons(PORT_RECIEVE);
+    //printf("I am here\n");
     si_me.sin_addr.s_addr = htonl(INADDR_ANY);
 
     //bind socket to PORT_RECIEVE
@@ -131,7 +134,7 @@ void* recieve_requests()
     }
 }
 
-void* send_requests()
+void *send_requests()
 {
     // get head of outgoing and sendto()
     // send peer a udp packet asking for a specific chunck
@@ -152,6 +155,7 @@ void* send_requests()
         {
             pthread_yield();
         }
+        //printf("!!!\n");
         temp = STAILQ_FIRST(&outgoing_requests)->data;
         STAILQ_REMOVE_HEAD(&outgoing_requests, entries);
         if (inet_aton(networkinfo.peers_ip[temp.destination_id], &si_other.sin_addr) == 0)
@@ -163,7 +167,7 @@ void* send_requests()
     }
 }
 
-void* generate_requests()
+void *generate_requests()
 {
     while (fileinfo.chuncks_recieved != fileinfo.chuncks_amount)
     {
@@ -176,15 +180,17 @@ void* generate_requests()
                     if (j != MY_ID)
                     {
                         // send packet to this peer
-                        struct DataPacket *temp = malloc(sizeof(struct DataPacket));
-                        temp->type_bit = 0;
-                        temp->source_id = MY_ID;
-                        temp->destination_id = j;
-                        temp->data_chunck.chunck_number = i;
+                        struct DataPacket temp;
+                        temp.type_bit = 0;
+                        temp.source_id = MY_ID;
+                        temp.destination_id = j;
+                        temp.data_chunck.chunck_number = i;
                         struct entry *n1;
                         n1 = malloc(sizeof(struct entry));
-                        n1->data = *temp;
+                        n1->data = temp;
+                        //printf("I am here with %d and %d\n", i, j);
                         STAILQ_INSERT_TAIL(&outgoing_requests, n1, entries);
+                        //printf("Passed\n");
                     }
                 }
             }
@@ -197,7 +203,7 @@ void* generate_requests()
     printf("\nGood!\n");
 }
 
-void* generate_responses()
+void *generate_responses()
 {
     struct DataPacket temp;
     for (;;)
@@ -226,6 +232,8 @@ void* generate_responses()
 }
 int main(void)
 {
+    STAILQ_INIT(&outgoing_requests);
+    STAILQ_INIT(&incoming_requests);
     // Network info init
     networkinfo.peers_number = 2;
     networkinfo.peers_ip[0] = "192.168.1.62";
