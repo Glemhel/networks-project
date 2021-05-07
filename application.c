@@ -15,8 +15,8 @@
 #define SECRET "qwertyuiasdfghjk"
 #define MY_ID 1
 #define IS_SENDER 0
-#define PORT_RECIEVE 8080 //The PORT_RECIEVE on which to listen for incoming data
-#define PORT_SEND 8889    //The PORT_SEND on which to send data
+#define PORT_RECIEVE 5001 //The PORT_RECIEVE on which to listen for incoming data
+#define PORT_SEND 5002    //The PORT_SEND on which to send data
 #define MAX_CLIENTS 2
 #define MAX_CHUNCKS 4
 
@@ -99,7 +99,7 @@ void *recieve_requests()
 {
     // recvfrom(), push to the queue
     struct sockaddr_in si_me, si_other;
-    int s, i, slen = sizeof(si_other), recv_len;
+    int s, slen = sizeof(si_other), recv_len;
     struct DataPacket *temp = malloc(sizeof(struct DataPacket));
     //create a UDP socket
     if ((s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
@@ -127,6 +127,7 @@ void *recieve_requests()
         {
             die("recvfrom()");
         };
+
         struct entry *n1;
         n1 = malloc(sizeof(struct entry));
         n1->data = *temp;
@@ -139,7 +140,7 @@ void *send_requests()
     // get head of outgoing and sendto()
     // send peer a udp packet asking for a specific chunck
     struct sockaddr_in si_other;
-    int s, i, slen = sizeof(si_other);
+    int s, slen = sizeof(si_other);
     struct DataPacket temp;
     if ((s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
     {
@@ -148,14 +149,13 @@ void *send_requests()
 
     memset((char *)&si_other, 0, sizeof(si_other));
     si_other.sin_family = AF_INET;
-    si_other.sin_port = htons(PORT_RECIEVE);
+    si_other.sin_port = htons(PORT_SEND);
     for (;;)
     {
         while (!STAILQ_FIRST(&outgoing_requests))
         {
             pthread_yield();
         }
-        //printf("!!!\n");
         temp = STAILQ_FIRST(&outgoing_requests)->data;
         STAILQ_REMOVE_HEAD(&outgoing_requests, entries);
         if (inet_aton(networkinfo.peers_ip[temp.destination_id], &si_other.sin_addr) == 0)
@@ -163,7 +163,9 @@ void *send_requests()
             fprintf(stderr, "inet_aton() failed\n");
             exit(1);
         }
+        //printf("%s\n", networkinfo.peers_ip[temp.destination_id]);
         sendto(s, (struct DataPacket *)&temp, sizeof(temp), 0, (struct sockaddr *)&si_other, slen);
+        //printf("!!!\n");
     }
 }
 
@@ -214,19 +216,30 @@ void *generate_responses()
         }
         temp = STAILQ_FIRST(&incoming_requests)->data;
         STAILQ_REMOVE_HEAD(&incoming_requests, entries);
-        if (fileinfo.chuncks_status[temp.data_chunck.chunck_number] == 1)
+        if (temp.type_bit == 1)
         {
-            // can respond
-            struct DataPacket reply;
-            reply.data_chunck.chunck_number = temp.data_chunck.chunck_number;
-            reply.source_id = MY_ID;
-            reply.destination_id = temp.source_id;
-            reply.type_bit = 1;
-            reply.data_chunck = fileinfo.data[temp.data_chunck.chunck_number];
-            struct entry *n1;
-            n1 = malloc(sizeof(struct entry));
-            n1->data = reply;
-            STAILQ_INSERT_TAIL(&outgoing_requests, n1, entries);
+            // write into database
+            int chunck = temp.data_chunck.chunck_number;
+            fileinfo.chuncks_status[chunck] = 1;
+            fileinfo.chuncks_recieved += 1;
+            fileinfo.data[chunck] = temp.data_chunck;
+        }
+        else
+        {
+            if (fileinfo.chuncks_status[temp.data_chunck.chunck_number] == 1)
+            {
+                // can respond
+                struct DataPacket reply;
+                reply.data_chunck.chunck_number = temp.data_chunck.chunck_number;
+                reply.source_id = MY_ID;
+                reply.destination_id = temp.source_id;
+                reply.type_bit = 1;
+                reply.data_chunck = fileinfo.data[temp.data_chunck.chunck_number];
+                struct entry *n1;
+                n1 = malloc(sizeof(struct entry));
+                n1->data = reply;
+                STAILQ_INSERT_TAIL(&outgoing_requests, n1, entries);
+            }
         }
     }
 }
@@ -236,8 +249,9 @@ int main(void)
     STAILQ_INIT(&incoming_requests);
     // Network info init
     networkinfo.peers_number = 2;
-    networkinfo.peers_ip[0] = "192.168.1.62";
-    networkinfo.peers_ip[1] = "192.168.1.70";
+    //networkinfo.peers_ip[0] = "192.168.1.70";
+    //networkinfo.peers_ip[1] = "192.168.1.62";
+    networkinfo.peers_ip[0] = networkinfo.peers_ip[1] = "127.0.0.1";
     if (IS_SENDER)
     {
         // fill the array of data
