@@ -187,6 +187,11 @@ void generate_requests()
             }
         }
     }
+    for (int i = 0; i < fileinfo.chuncks_amount; i++)
+    {
+        printf("%s", fileinfo.data[i].data);
+    }
+    printf("\nGood!\n");
 }
 
 void generate_responses()
@@ -222,43 +227,53 @@ int main(void)
     networkinfo.peers_number = 2;
     networkinfo.peers_ip[0] = "192.168.1.62";
     networkinfo.peers_ip[1] = "192.168.1.70";
-    if (IS_SENDER){
+    if (IS_SENDER)
+    {
         // fill the array of data
         fileinfo.file_size = 16;
         fileinfo.chuncks_amount = 4;
-        for (int i = 0; i < 4; i++){
+        for (int i = 0; i < 4; i++)
+        {
             fileinfo.chuncks_status[i] = 1;
         }
         fileinfo.chuncks_recieved = 4;
-        for (int i = 0; i < 4; i++){
+        for (int i = 0; i < 4; i++)
+        {
             fileinfo.data[i].chunck_number = i;
-            for (int j = 0; j < BUFLEN; j++){
+            for (int j = 0; j < BUFLEN; j++)
+            {
                 fileinfo.data[i].data[j] = SECRET[i * 4 + j];
             }
         }
-    } else {
+    }
+    else
+    {
         fileinfo.file_size = 16;
         fileinfo.chuncks_amount = 4;
-        for (int i = 0; i < 4; i++){
+        for (int i = 0; i < 4; i++)
+        {
             fileinfo.chuncks_status[i] = 0;
         }
         fileinfo.chuncks_recieved = 0;
-        for (int i = 0; i < 4; i++){
+        for (int i = 0; i < 4; i++)
+        {
             fileinfo.data[i].chunck_number = i;
-            for (int j = 0; j < BUFLEN; j++){
+            for (int j = 0; j < BUFLEN; j++)
+            {
                 fileinfo.data[i].data[j] = '#';
             }
         }
     }
     pthread_t sender, reciever, requests_generator, response_generator;
+    printf("starting threads\n");
     pthread_create(&sender, NULL, send_requests, NULL);
     pthread_create(&reciever, NULL, recieve_requests, NULL);
     pthread_create(&requests_generator, NULL, generate_requests, NULL);
     pthread_create(&response_generator, NULL, generate_responses, NULL);
-    pthread_join(generate_responses, NULL);
+    pthread_join(sender, NULL);
+    pthread_join(reciever, NULL);
+    pthread_join(requests_generator, NULL);
+    pthread_join(response_generator, NULL);
     // if we are here, all chunck are got, print them
-    for (int i = 0; i < fileinfo.chuncks_amount; i++){
-        printf("%s", fileinfo.data[i].data);
-    }
     return 0;
 }
