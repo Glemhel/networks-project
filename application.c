@@ -1,19 +1,22 @@
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <pthread.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
-#include <sys/queue.h>
+#include <sys/queue.h>                                                           
+#include <unistd.h>   
 
 #define BUFLEN 4 //Max length of string chunck
 #define SERVER "127.0.0.1"
 #define SECRET "qwertyuiasdfghjk"
 #define MY_ID 0
 #define IS_SENDER 1
-#define PORT_RECIEVE 8888 //The PORT_RECIEVE on which to listen for incoming data
+#define PORT_RECIEVE 8889 //The PORT_RECIEVE on which to listen for incoming data
 #define PORT_SEND 8889    //The PORT_SEND on which to send data
-#define MAX_CLIENTS 100
+#define MAX_CLIENTS 2
 #define MAX_CHUNCKS 4
 
 struct NetworkInfo
@@ -90,7 +93,7 @@ void ask_peer(int chunck, int peer)
     sendto(s, message, strlen(message), 0, (struct sockaddr *)&si_other, slen);
 }
 */
-void recieve_requests()
+void* recieve_requests()
 {
     // recvfrom(), push to the queue
     struct sockaddr_in si_me, si_other;
@@ -128,7 +131,7 @@ void recieve_requests()
     }
 }
 
-void send_requests()
+void* send_requests()
 {
     // get head of outgoing and sendto()
     // send peer a udp packet asking for a specific chunck
@@ -160,7 +163,7 @@ void send_requests()
     }
 }
 
-void generate_requests()
+void* generate_requests()
 {
     while (fileinfo.chuncks_recieved != fileinfo.chuncks_amount)
     {
@@ -194,7 +197,7 @@ void generate_requests()
     printf("\nGood!\n");
 }
 
-void generate_responses()
+void* generate_responses()
 {
     struct DataPacket temp;
     for (;;)
