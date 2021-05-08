@@ -11,7 +11,7 @@
 #include <sys/queue.h>
 #include <unistd.h>
 
-#define BUFLEN 73 //Max length of string chunck
+#define BUFLEN 10 //Max length of string chunck
 #define START_PORT 5555
 #define LOCALHOST "127.0.0.1"
 #define DATA_TO_SEND "Very beautiful string to distribute over a small peer-connected network!"
@@ -22,9 +22,9 @@
 int MY_ID = 0;
 int IS_SENDER = 1;
 
-pthread_mutex_t incoming_requests_mutex, outgoing_requests_mutex;
+pthread_mutex_t incoming_requests_mutex, outgoing_requests_mutex, chuncks_recieved_mutex;
 
-struct ClientInfo
+struct PeerInfo
 {
     char ip_address[20];
     int port_recieve;
@@ -34,7 +34,7 @@ struct ClientInfo
 struct NetworkInfo
 {
     int peers_number;
-    struct ClientInfo si_peers[NPEERS];
+    struct PeerInfo peers[NPEERS];
 };
 
 // sending string for now
@@ -52,6 +52,9 @@ struct FileInfo
     struct DataChunck data[MAX_CHUNCKS];
     int chuncks_recieved;
 };
+
+struct FileInfo fileinfo;
+struct NetworkInfo networkinfo;
 
 struct DataPacket
 {
@@ -97,9 +100,6 @@ int queue_empty(struct stailhead *queue)
     return STAILQ_FIRST(queue) == NULL;
 }
 
-struct FileInfo fileinfo;
-struct NetworkInfo networkinfo;
-
 void die(char *s)
 {
     perror(s);
@@ -121,7 +121,7 @@ void *recieve_requests()
     memset((char *)&si_me, 0, sizeof(si_me));
 
     si_me.sin_family = AF_INET;
-    si_me.sin_port = htons(networkinfo.si_peers[MY_ID].port_recieve);
+    si_me.sin_port = htons(networkinfo.peers[MY_ID].port_recieve);
     si_me.sin_addr.s_addr = htonl(INADDR_ANY);
 
     //bind socket
@@ -170,12 +170,12 @@ void *send_requests()
             continue;
         }
         temp = queue_peek(&outgoing_requests);
-        int port = networkinfo.si_peers[temp.destination_id].port_recieve;
+        int port = networkinfo.peers[temp.destination_id].port_recieve;
         si_other.sin_port = htons(port);
         queue_pop(&outgoing_requests);
         outgoing_requests_length -= 1;
         pthread_mutex_unlock(&outgoing_requests_mutex);
-        if (inet_aton(networkinfo.si_peers[temp.destination_id].ip_address, &si_other.sin_addr) == 0)
+        if (inet_aton(networkinfo.peers[temp.destination_id].ip_address, &si_other.sin_addr) == 0)
         {
             fprintf(stderr, "inet_aton() failed\n");
             exit(1);
@@ -188,16 +188,8 @@ void *send_requests()
 void *generate_requests()
 {
     // while we miss some data, ask everyone about it
-    while (1)
+    while (fileinfo.chuncks_recieved != fileinfo.chuncks_amount)
     {
-        int counter = 0;
-        for (int i = 0; i < fileinfo.chuncks_amount; i++)
-        {
-            if (fileinfo.chuncks_status[i] == 1)
-                counter += 1;
-        }
-        if (counter == fileinfo.chuncks_amount)
-            break;
         printf("#%d: have %d now\n", MY_ID, fileinfo.chuncks_recieved);
         for (int i = 0; i < fileinfo.chuncks_amount; i++)
         {
@@ -260,32 +252,30 @@ void *generate_responses()
         queue_pop(&incoming_requests);
         incoming_requests_length -= 1;
         pthread_mutex_unlock(&incoming_requests_mutex);
-        if (MY_ID == 1 && temp.type_bit == 1)
-            printf("Got reply from %d\n", temp.source_id);
-        for (int i = 0; i < fileinfo.chuncks_amount; i++)
-        {
-            printf("%d", fileinfo.chuncks_status[i]);
-        }
-        printf("\n");
+        if (temp.type_bit == 1)
+            printf("Got packet %d from %d\n", temp.data_chunck.chunck_number, temp.source_id);
+        // for (int i = 0; i < fileinfo.chuncks_amount; i++)
+        // {
+        //     printf("%d", fileinfo.chuncks_status[i]);
+        // }
+        // printf("\n");
         if (temp.type_bit == 1 && fileinfo.chuncks_status[temp.data_chunck.chunck_number] != 1)
         // packet with info which we don't have
         {
             // write info to database
             int chunck = temp.data_chunck.chunck_number;
             fileinfo.chuncks_status[chunck] = 1;
+            pthread_mutex_lock(&chuncks_recieved_mutex);
             fileinfo.chuncks_recieved += 1;
+            pthread_mutex_unlock(&chuncks_recieved_mutex);
             fileinfo.data[chunck] = temp.data_chunck;
         }
         else
         {
 
-            // packet with request
-            if (fileinfo.chuncks_status[temp.data_chunck.chunck_number] == 1)
+            // packet with request that we can answer ?
+            if (temp.type_bit == 0 && fileinfo.chuncks_status[temp.data_chunck.chunck_number] == 1)
             {
-                if (MY_ID == 0)
-                {
-                    printf("Got question from %d\n", temp.source_id);
-                }
                 //if able to respond, do it
                 struct DataPacket reply;
                 reply.source_id = MY_ID;
@@ -312,6 +302,7 @@ int main(int argc, char *argv[])
     printf("Initialization..\n");
     pthread_mutex_init(&incoming_requests_mutex, NULL);
     pthread_mutex_init(&outgoing_requests_mutex, NULL);
+    pthread_mutex_init(&chuncks_recieved_mutex, NULL);
     STAILQ_INIT(&outgoing_requests);
     STAILQ_INIT(&incoming_requests);
     // NETWORK INFO SECTION
@@ -319,9 +310,9 @@ int main(int argc, char *argv[])
     networkinfo.peers_number = NPEERS;
     for (int i = 0; i < NPEERS; i++)
     {
-        strcpy(networkinfo.si_peers[i].ip_address, LOCALHOST);
-        networkinfo.si_peers[i].port_recieve = START_PORT + 2 * i;
-        networkinfo.si_peers[i].port_send = START_PORT + 2 * i + 1;
+        strcpy(networkinfo.peers[i].ip_address, LOCALHOST);
+        networkinfo.peers[i].port_recieve = START_PORT + 2 * i;
+        networkinfo.peers[i].port_send = START_PORT + 2 * i + 1;
     }
 
     // initialize infomation about the distributed file
@@ -365,5 +356,6 @@ int main(int argc, char *argv[])
     pthread_join(response_generator, NULL);
     pthread_mutex_destroy(&incoming_requests_mutex);
     pthread_mutex_destroy(&outgoing_requests_mutex);
+    pthread_mutex_destroy(&chuncks_recieved_mutex);
     return 0;
 }
