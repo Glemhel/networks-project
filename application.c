@@ -11,12 +11,13 @@
 #include <sys/queue.h>
 #include <unistd.h>
 
-#define BUFLEN 5 //Max length of string chunck
-#define START_PORT 5001
+#define BUFLEN 73 //Max length of string chunck
+#define START_PORT 5555
 #define LOCALHOST "127.0.0.1"
 #define DATA_TO_SEND "Very beautiful string to distribute over a small peer-connected network!"
-#define NPEERS 3
+#define NPEERS 5
 #define MAX_CHUNCKS 100
+#define QUEUE_LENGTH_MAX 10
 
 int MY_ID = 0;
 int IS_SENDER = 1;
@@ -70,9 +71,11 @@ struct entry
 STAILQ_HEAD(stailhead, entry);
 
 struct stailhead incoming_requests, outgoing_requests;
+int incoming_requests_length = 0, outgoing_requests_length = 0;
 
 void queue_push(struct stailhead *queue, struct DataPacket temp)
 {
+
     struct entry *n1;
     n1 = malloc(sizeof(struct entry));
     n1->data = temp;
@@ -136,7 +139,11 @@ void *recieve_requests()
         };
         printf("#%d: got from %d", MY_ID, temp->source_id);
         pthread_mutex_lock(&incoming_requests_mutex);
-        queue_push(&incoming_requests, *temp);
+        if (incoming_requests_length < QUEUE_LENGTH_MAX)
+        {
+            incoming_requests_length += 1;
+            queue_push(&incoming_requests, *temp);
+        }
         pthread_mutex_unlock(&incoming_requests_mutex);
     }
 }
@@ -166,6 +173,7 @@ void *send_requests()
         int port = networkinfo.si_peers[temp.destination_id].port_recieve;
         si_other.sin_port = htons(port);
         queue_pop(&outgoing_requests);
+        outgoing_requests_length -= 1;
         pthread_mutex_unlock(&outgoing_requests_mutex);
         if (inet_aton(networkinfo.si_peers[temp.destination_id].ip_address, &si_other.sin_addr) == 0)
         {
@@ -199,8 +207,8 @@ void *generate_requests()
                 // printf("#%d need chunck %d\n", MY_ID, i);
                 for (int j = 0; j < networkinfo.peers_number; j++)
                 {
-                    sleep(1);
-                    //usleep(1000 * 100);
+                    //sleep(1);
+                    usleep(1000 * 100);
                     // we cannot ask ourselves
                     if (j != MY_ID)
                     {
@@ -211,7 +219,11 @@ void *generate_requests()
                         temp.destination_id = j;
                         temp.data_chunck.chunck_number = i;
                         pthread_mutex_lock(&outgoing_requests_mutex);
-                        queue_push(&outgoing_requests, temp);
+                        if (outgoing_requests_length < QUEUE_LENGTH_MAX)
+                        {
+                            queue_push(&outgoing_requests, temp);
+                            outgoing_requests_length += 1;
+                        }
                         pthread_mutex_unlock(&outgoing_requests_mutex);
                     }
                 }
@@ -246,6 +258,7 @@ void *generate_responses()
         }
         temp = queue_peek(&incoming_requests);
         queue_pop(&incoming_requests);
+        incoming_requests_length -= 1;
         pthread_mutex_unlock(&incoming_requests_mutex);
         if (MY_ID == 1 && temp.type_bit == 1)
             printf("Got reply from %d\n", temp.source_id);
@@ -280,7 +293,11 @@ void *generate_responses()
                 reply.type_bit = 1;
                 reply.data_chunck = fileinfo.data[temp.data_chunck.chunck_number];
                 pthread_mutex_lock(&outgoing_requests_mutex);
-                queue_push(&outgoing_requests, reply);
+                if (outgoing_requests_length < QUEUE_LENGTH_MAX)
+                {
+                    outgoing_requests_length += 1;
+                    queue_push(&outgoing_requests, reply);
+                }
                 pthread_mutex_unlock(&outgoing_requests_mutex);
             }
         }
