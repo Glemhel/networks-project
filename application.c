@@ -16,7 +16,7 @@
 #define START_PORT 5555
 #define LOCALHOST "127.0.0.1"
 #define DATA_TO_SEND "Very beautiful string to distribute over a small peer-connected network!"
-#define NPEERS 6
+#define NPEERS 8
 #define MAX_CHUNCKS 100
 #define QUEUE_LENGTH_MAX 10
 
@@ -106,7 +106,8 @@ int queue_empty(struct stailhead *queue)
     return STAILQ_FIRST(queue) == NULL;
 }
 
-struct edge{
+struct edge
+{
     int from;
     int to;
 };
@@ -239,10 +240,13 @@ void *generate_requests()
                 // printf("#%d need chunck %d\n", MY_ID, i);
                 for (int j = 0; j < networkinfo.peers_number; j++)
                 {
-                    sleep(1);
-                    //usleep(1000 * 100);
+                    //sleep(1);
+                    usleep(1000 * 10);
                     // we can only ask our neighbours in the graph
-                    if (networkinfo.peers_graph[MY_ID][j] == 1)
+                    // ask with some probability to show that links may be not able to operate
+                    int ask = rand() % 2;
+                    //int ask = 1;
+                    if (networkinfo.peers_graph[MY_ID][j] == 1 && ask == 1)
                     {
                         // send packet to this peer
                         struct DataPacket temp;
@@ -348,22 +352,27 @@ void init_networkinfo()
         networkinfo.peers[i].port_send = START_PORT + 2 * i + 1;
     }
     // initializing peers availability graph - default is noone sees noone
-    for (int i = 0; i < networkinfo.peers_number; i++){
-        for (int j = 0; j < networkinfo.peers_number; j++){
+    for (int i = 0; i < networkinfo.peers_number; i++)
+    {
+        for (int j = 0; j < networkinfo.peers_number; j++)
+        {
             networkinfo.peers_graph[i][j] = 0;
         }
     }
     // adding some edges to this graph
-    int edges_number = 6;
+    int edges_number = 9;
     struct edge edges[] = {
         {0, 1},
         {0, 2},
         {1, 3},
         {1, 4},
-        {2, 5},
-        {4, 5}
-        };
-    for (int i = 0; i < edges_number; i++){
+        {2, 3},
+        {2, 7},
+        {3, 5},
+        {5, 7},
+        {3, 6}};
+    for (int i = 0; i < edges_number; i++)
+    {
         networkinfo.peers_graph[edges[i].from][edges[i].to] = 1;
         networkinfo.peers_graph[edges[i].to][edges[i].from] = 1;
     }
@@ -409,6 +418,7 @@ int main(int argc, char *argv[])
     IS_SENDER = atoi(argv[2]);
     printf("I am peer #%d, sender=%d\n", MY_ID, IS_SENDER);
     printf("Initialization..\n");
+    srand(time(NULL));
     init_mutexes();
     init_queues();
     init_networkinfo();
