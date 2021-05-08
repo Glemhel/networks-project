@@ -10,20 +10,27 @@
 #include <sys/queue.h>
 #include <unistd.h>
 
-#define BUFLEN 4 //Max length of string chunck
-#define SERVER "127.0.0.1"
-#define SECRET "qwertyuiasdfghjk"
-#define MY_ID 1
-#define IS_SENDER 0
-#define PORT_RECIEVE 5001 //The PORT_RECIEVE on which to listen for incoming data
-#define PORT_SEND 5002    //The PORT_SEND on which to send data
-#define MAX_CLIENTS 2
-#define MAX_CHUNCKS 4
+#define BUFLEN 5 //Max length of string chunck
+#define START_PORT 5001
+#define LOCALHOST "127.0.0.1"
+#define DATA_TO_SEND "Very beautiful string to distribute over a small peer-connected network!"
+#define NPEERS 4
+#define MAX_CHUNCKS 100
+
+int MY_ID = 0;
+int IS_SENDER = 1;
+
+struct ClientInfo
+{
+    char ip_address[20];
+    int port_recieve;
+    int port_send;
+};
 
 struct NetworkInfo
 {
     int peers_number;
-    char *peers_ip[MAX_CLIENTS];
+    struct ClientInfo si_peers[NPEERS];
 };
 
 // sending string for now
@@ -61,6 +68,29 @@ STAILQ_HEAD(stailhead, entry);
 
 struct stailhead incoming_requests, outgoing_requests;
 
+void queue_push(struct stailhead *queue, struct DataPacket temp)
+{
+    struct entry *n1;
+    n1 = malloc(sizeof(struct entry));
+    n1->data = temp;
+    STAILQ_INSERT_TAIL(queue, n1, entries);
+}
+
+struct DataPacket queue_peek(struct stailhead *queue)
+{
+    return STAILQ_FIRST(queue)->data;
+}
+
+void queue_pop(struct stailhead *queue)
+{
+    STAILQ_REMOVE_HEAD(queue, entries);
+}
+
+int queue_empty(struct stailhead *queue)
+{
+    return STAILQ_FIRST(queue) == NULL;
+}
+
 struct FileInfo fileinfo;
 struct NetworkInfo networkinfo;
 
@@ -69,32 +99,7 @@ void die(char *s)
     perror(s);
     exit(1);
 }
-/*
-void ask_peer(int chunck, int peer)
-{
-    // send peer a udp packet asking for a specific chunck
-    struct sockaddr_in si_other;
-    int s, i, slen = sizeof(si_other);
-    char buf[BUFLEN];
-    char message[BUFLEN];
-    if ((s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
-    {
-        die("socket");
-    }
 
-    memset((char *)&si_other, 0, sizeof(si_other));
-    si_other.sin_family = AF_INET;
-    si_other.sin_port = htons(PORT_RECIEVE);
-
-    if (inet_aton(SERVER, &si_other.sin_addr) == 0)
-    {
-        fprintf(stderr, "inet_aton() failed\n");
-        exit(1);
-    }
-    message[0] = '1';
-    sendto(s, message, strlen(message), 0, (struct sockaddr *)&si_other, slen);
-}
-*/
 void *recieve_requests()
 {
     // recvfrom(), push to the queue
@@ -110,11 +115,10 @@ void *recieve_requests()
     memset((char *)&si_me, 0, sizeof(si_me));
 
     si_me.sin_family = AF_INET;
-    si_me.sin_port = htons(PORT_RECIEVE);
-    //printf("I am here\n");
+    si_me.sin_port = htons(networkinfo.si_peers[MY_ID].port_recieve);
     si_me.sin_addr.s_addr = htonl(INADDR_ANY);
 
-    //bind socket to PORT_RECIEVE
+    //bind socket
     if (bind(s, (struct sockaddr *)&si_me, sizeof(si_me)) == -1)
     {
         die("bind");
@@ -127,11 +131,8 @@ void *recieve_requests()
         {
             die("recvfrom()");
         };
-
-        struct entry *n1;
-        n1 = malloc(sizeof(struct entry));
-        n1->data = *temp;
-        STAILQ_INSERT_TAIL(&incoming_requests, n1, entries);
+        printf("#%d: got from %d", MY_ID, temp->source_id);
+        queue_push(&incoming_requests, *temp);
     }
 }
 
@@ -149,36 +150,44 @@ void *send_requests()
 
     memset((char *)&si_other, 0, sizeof(si_other));
     si_other.sin_family = AF_INET;
-    si_other.sin_port = htons(PORT_SEND);
     for (;;)
     {
-        while (!STAILQ_FIRST(&outgoing_requests))
+        while (queue_empty(&outgoing_requests))
         {
-            pthread_yield();
+            //printf("waiting queue\n");
+            //pthread_yield();
         }
-        temp = STAILQ_FIRST(&outgoing_requests)->data;
-        STAILQ_REMOVE_HEAD(&outgoing_requests, entries);
-        if (inet_aton(networkinfo.peers_ip[temp.destination_id], &si_other.sin_addr) == 0)
+        temp = queue_peek(&outgoing_requests);
+        int port = networkinfo.si_peers[temp.destination_id].port_recieve;
+        si_other.sin_port = htons(port);
+        queue_pop(&outgoing_requests);
+        if (inet_aton(networkinfo.si_peers[temp.destination_id].ip_address, &si_other.sin_addr) == 0)
         {
             fprintf(stderr, "inet_aton() failed\n");
             exit(1);
         }
-        //printf("%s\n", networkinfo.peers_ip[temp.destination_id]);
+        printf("Sending request from %d to %d\n", temp.source_id, temp.destination_id);
         sendto(s, (struct DataPacket *)&temp, sizeof(temp), 0, (struct sockaddr *)&si_other, slen);
-        //printf("!!!\n");
     }
 }
 
 void *generate_requests()
 {
-    while (fileinfo.chuncks_recieved != fileinfo.chuncks_amount)
+    // while we miss some data, ask everyone about it
+    while (fileinfo.chuncks_recieved < fileinfo.chuncks_amount)
     {
+        printf("#%d: have %d now\n", MY_ID, fileinfo.chuncks_recieved);
         for (int i = 0; i < fileinfo.chuncks_amount; i++)
         {
+            // if this chunck is in need
             if (fileinfo.chuncks_status[i] != 1)
             {
+                // printf("#%d need chunck %d\n", MY_ID, i);
                 for (int j = 0; j < networkinfo.peers_number; j++)
                 {
+                    //sleep(1);
+                    usleep(1000 * 100);
+                    // we cannot ask ourselves
                     if (j != MY_ID)
                     {
                         // send packet to this peer
@@ -187,22 +196,19 @@ void *generate_requests()
                         temp.source_id = MY_ID;
                         temp.destination_id = j;
                         temp.data_chunck.chunck_number = i;
-                        struct entry *n1;
-                        n1 = malloc(sizeof(struct entry));
-                        n1->data = temp;
-                        //printf("I am here with %d and %d\n", i, j);
-                        STAILQ_INSERT_TAIL(&outgoing_requests, n1, entries);
-                        //printf("Passed\n");
+                        queue_push(&outgoing_requests, temp);
                     }
                 }
             }
         }
     }
+    // when we posess all chunck, print the data string
+    printf("Now I have all the data:\n");
     for (int i = 0; i < fileinfo.chuncks_amount; i++)
     {
         printf("%s", fileinfo.data[i].data);
     }
-    printf("\nGood!\n");
+    printf("\nHelping others to get the data..\n");
 }
 
 void *generate_responses()
@@ -210,15 +216,23 @@ void *generate_responses()
     struct DataPacket temp;
     for (;;)
     {
-        while (!STAILQ_FIRST(&incoming_requests))
+        while (queue_empty(&incoming_requests))
         {
-            pthread_yield();
+            //pthread_yield();
         }
-        temp = STAILQ_FIRST(&incoming_requests)->data;
-        STAILQ_REMOVE_HEAD(&incoming_requests, entries);
-        if (temp.type_bit == 1)
+        temp = queue_peek(&incoming_requests);
+        queue_pop(&incoming_requests);
+
+        printf("Got reply from %d\n", temp.source_id);
+        for (int i = 0; i < fileinfo.chuncks_amount; i++)
         {
-            // write into database
+            printf("%d", fileinfo.chuncks_status[i]);
+        }
+        printf("\n");
+        if (temp.type_bit == 1 && fileinfo.chuncks_status[temp.data_chunck.chunck_number] != 1)
+        // packet with info which we don't have
+        {
+            // write info to database
             int chunck = temp.data_chunck.chunck_number;
             fileinfo.chuncks_status[chunck] = 1;
             fileinfo.chuncks_recieved += 1;
@@ -226,71 +240,76 @@ void *generate_responses()
         }
         else
         {
+
+            // packet with request
             if (fileinfo.chuncks_status[temp.data_chunck.chunck_number] == 1)
             {
-                // can respond
+                if (MY_ID == 0)
+                {
+                    printf("Got question from %d\n", temp.source_id);
+                }
+                //if able to respond, do it
                 struct DataPacket reply;
-                reply.data_chunck.chunck_number = temp.data_chunck.chunck_number;
                 reply.source_id = MY_ID;
                 reply.destination_id = temp.source_id;
                 reply.type_bit = 1;
                 reply.data_chunck = fileinfo.data[temp.data_chunck.chunck_number];
-                struct entry *n1;
-                n1 = malloc(sizeof(struct entry));
-                n1->data = reply;
-                STAILQ_INSERT_TAIL(&outgoing_requests, n1, entries);
+                queue_push(&outgoing_requests, reply);
             }
         }
     }
 }
-int main(void)
+int main(int argc, char *argv[])
 {
+    // this parameters are entered by bash script
+    MY_ID = atoi(argv[1]);
+    IS_SENDER = atoi(argv[2]);
+    printf("I am peer #%d, sender=%d\n", MY_ID, IS_SENDER);
+    printf("Initialization..\n");
     STAILQ_INIT(&outgoing_requests);
     STAILQ_INIT(&incoming_requests);
-    // Network info init
-    networkinfo.peers_number = 2;
-    //networkinfo.peers_ip[0] = "192.168.1.70";
-    //networkinfo.peers_ip[1] = "192.168.1.62";
-    networkinfo.peers_ip[0] = networkinfo.peers_ip[1] = "127.0.0.1";
+
+    // NETWORK INFO SECTION
+    // initializing local clients' ports
+    networkinfo.peers_number = NPEERS;
+    for (int i = 0; i < NPEERS; i++)
+    {
+        strcpy(networkinfo.si_peers[i].ip_address, LOCALHOST);
+        networkinfo.si_peers[i].port_recieve = START_PORT + 2 * i;
+        networkinfo.si_peers[i].port_send = START_PORT + 2 * i + 1;
+    }
+
+    // initialize infomation about the distributed file
+    fileinfo.file_size = strlen(DATA_TO_SEND);
+    fileinfo.chuncks_amount = (fileinfo.file_size + BUFLEN - 1) / BUFLEN;
+    for (int i = 0; i < fileinfo.chuncks_amount; i++)
+    {
+        fileinfo.chuncks_status[i] = IS_SENDER;
+    }
+    fileinfo.chuncks_recieved = fileinfo.chuncks_amount * IS_SENDER;
+    // peer has all the data wanted or not?
     if (IS_SENDER)
     {
-        // fill the array of data
-        fileinfo.file_size = 16;
-        fileinfo.chuncks_amount = 4;
-        for (int i = 0; i < 4; i++)
-        {
-            fileinfo.chuncks_status[i] = 1;
-        }
-        fileinfo.chuncks_recieved = 4;
-        for (int i = 0; i < 4; i++)
+        // fill the array with data that we actually have
+        for (int i = 0; i < fileinfo.chuncks_amount; i++)
         {
             fileinfo.data[i].chunck_number = i;
             for (int j = 0; j < BUFLEN; j++)
             {
-                fileinfo.data[i].data[j] = SECRET[i * 4 + j];
+                if (i * BUFLEN + j < fileinfo.file_size)
+                {
+                    fileinfo.data[i].data[j] = DATA_TO_SEND[i * BUFLEN + j];
+                }
+                else
+                {
+                    fileinfo.data[i].data[j] = '\0';
+                }
             }
         }
     }
-    else
-    {
-        fileinfo.file_size = 16;
-        fileinfo.chuncks_amount = 4;
-        for (int i = 0; i < 4; i++)
-        {
-            fileinfo.chuncks_status[i] = 0;
-        }
-        fileinfo.chuncks_recieved = 0;
-        for (int i = 0; i < 4; i++)
-        {
-            fileinfo.data[i].chunck_number = i;
-            for (int j = 0; j < BUFLEN; j++)
-            {
-                fileinfo.data[i].data[j] = '#';
-            }
-        }
-    }
+
     pthread_t sender, reciever, requests_generator, response_generator;
-    printf("starting threads\n");
+    printf("Starting application...\n");
     pthread_create(&sender, NULL, send_requests, NULL);
     pthread_create(&reciever, NULL, recieve_requests, NULL);
     pthread_create(&requests_generator, NULL, generate_requests, NULL);
@@ -299,6 +318,5 @@ int main(void)
     pthread_join(reciever, NULL);
     pthread_join(requests_generator, NULL);
     pthread_join(response_generator, NULL);
-    // if we are here, all chunck are got, print them
     return 0;
 }
