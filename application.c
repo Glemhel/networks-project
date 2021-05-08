@@ -16,7 +16,7 @@
 #define START_PORT 5555
 #define LOCALHOST "127.0.0.1"
 #define DATA_TO_SEND "Very beautiful string to distribute over a small peer-connected network!"
-#define NPEERS 5
+#define NPEERS 6
 #define MAX_CHUNCKS 100
 #define QUEUE_LENGTH_MAX 10
 
@@ -39,6 +39,7 @@ struct NetworkInfo
 {
     int peers_number;
     struct PeerInfo peers[NPEERS];
+    int peers_graph[NPEERS][NPEERS];
 };
 
 // sending string for now
@@ -105,6 +106,11 @@ int queue_empty(struct stailhead *queue)
     return STAILQ_FIRST(queue) == NULL;
 }
 
+struct edge{
+    int from;
+    int to;
+};
+
 void die(char *s)
 {
     perror(s);
@@ -142,7 +148,7 @@ void *recieve_requests()
         {
             die("recvfrom()");
         };
-        printf("#%d: got from %d", MY_ID, temp->source_id);
+        printf("#%d: got from %d\n", MY_ID, temp->source_id);
         pthread_mutex_lock(&incoming_requests_mutex);
         if (incoming_requests_length < QUEUE_LENGTH_MAX)
         {
@@ -190,10 +196,11 @@ void *send_requests()
     }
 }
 
-void log_info(){
+void log_info()
+{
     // when we posess all chunck, print the data string
     end = clock();
-    cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+    cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
     printf("Now I have all the data, helping others!\n");
     // log data into file
     FILE *fp;
@@ -204,12 +211,14 @@ void log_info(){
     fprintf(fp, "Peer id: %d\n", MY_ID);
     fprintf(fp, "Seconds taken to recieve all packets: %f\n", cpu_time_used);
     fprintf(fp, "Peers that delivered packets:\n");
-    for (int i = 0; i < fileinfo.chuncks_amount; i++){
+    for (int i = 0; i < fileinfo.chuncks_amount; i++)
+    {
         fprintf(fp, " %d ", fileinfo.chunck_recieved_from[i]);
     }
     fprintf(fp, "\n");
     fprintf(fp, "Data that was delivered:\n");
-    for (int i = 0; i < fileinfo.chuncks_amount; i++){
+    for (int i = 0; i < fileinfo.chuncks_amount; i++)
+    {
         fprintf(fp, "%s", fileinfo.data[i].data);
     }
     fprintf(fp, "\n-----\n");
@@ -228,12 +237,12 @@ void *generate_requests()
             if (fileinfo.chuncks_status[i] != 1)
             {
                 // printf("#%d need chunck %d\n", MY_ID, i);
-                for (int j = networkinfo.peers_number - 1; j >= 0; j--)
+                for (int j = 0; j < networkinfo.peers_number; j++)
                 {
-                    //sleep(1);
-                    usleep(1000 * 100);
-                    // we cannot ask ourselves
-                    if (j != MY_ID)
+                    sleep(1);
+                    //usleep(1000 * 100);
+                    // we can only ask our neighbours in the graph
+                    if (networkinfo.peers_graph[MY_ID][j] == 1)
                     {
                         // send packet to this peer
                         struct DataPacket temp;
@@ -313,18 +322,22 @@ void *generate_responses()
         }
     }
 }
-int main(int argc, char *argv[])
+
+void init_mutexes()
 {
-    // this parameters are entered by bash script
-    MY_ID = atoi(argv[1]);
-    IS_SENDER = atoi(argv[2]);
-    printf("I am peer #%d, sender=%d\n", MY_ID, IS_SENDER);
-    printf("Initialization..\n");
     pthread_mutex_init(&incoming_requests_mutex, NULL);
     pthread_mutex_init(&outgoing_requests_mutex, NULL);
     pthread_mutex_init(&chuncks_recieved_mutex, NULL);
+}
+
+void init_queues()
+{
     STAILQ_INIT(&outgoing_requests);
     STAILQ_INIT(&incoming_requests);
+}
+
+void init_networkinfo()
+{
     // NETWORK INFO SECTION
     // initializing local clients' ports
     networkinfo.peers_number = NPEERS;
@@ -334,7 +347,30 @@ int main(int argc, char *argv[])
         networkinfo.peers[i].port_recieve = START_PORT + 2 * i;
         networkinfo.peers[i].port_send = START_PORT + 2 * i + 1;
     }
+    // initializing peers availability graph - default is noone sees noone
+    for (int i = 0; i < networkinfo.peers_number; i++){
+        for (int j = 0; j < networkinfo.peers_number; j++){
+            networkinfo.peers_graph[i][j] = 0;
+        }
+    }
+    // adding some edges to this graph
+    int edges_number = 6;
+    struct edge edges[] = {
+        {0, 1},
+        {0, 2},
+        {1, 3},
+        {1, 4},
+        {2, 5},
+        {4, 5}
+        };
+    for (int i = 0; i < edges_number; i++){
+        networkinfo.peers_graph[edges[i].from][edges[i].to] = 1;
+        networkinfo.peers_graph[edges[i].to][edges[i].from] = 1;
+    }
+}
 
+void init_fileinfo()
+{
     // initialize infomation about the distributed file
     fileinfo.file_size = strlen(DATA_TO_SEND);
     fileinfo.chuncks_amount = (fileinfo.file_size + BUFLEN - 1) / BUFLEN;
@@ -364,6 +400,19 @@ int main(int argc, char *argv[])
             }
         }
     }
+}
+
+int main(int argc, char *argv[])
+{
+    // this parameters are entered by bash script
+    MY_ID = atoi(argv[1]);
+    IS_SENDER = atoi(argv[2]);
+    printf("I am peer #%d, sender=%d\n", MY_ID, IS_SENDER);
+    printf("Initialization..\n");
+    init_mutexes();
+    init_queues();
+    init_networkinfo();
+    init_fileinfo();
 
     pthread_t sender, reciever, requests_generator, response_generator;
     printf("Starting application...\n");
