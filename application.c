@@ -9,6 +9,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/queue.h>
+#include <time.h>
 #include <unistd.h>
 
 #define BUFLEN 10 //Max length of string chunck
@@ -21,6 +22,9 @@
 
 int MY_ID = 0;
 int IS_SENDER = 1;
+
+clock_t start, end;
+double cpu_time_used;
 
 pthread_mutex_t incoming_requests_mutex, outgoing_requests_mutex, chuncks_recieved_mutex;
 
@@ -50,6 +54,7 @@ struct FileInfo
     int chuncks_amount;
     int chuncks_status[MAX_CHUNCKS];
     struct DataChunck data[MAX_CHUNCKS];
+    int chunck_recieved_from[MAX_CHUNCKS];
     int chuncks_recieved;
 };
 
@@ -185,6 +190,32 @@ void *send_requests()
     }
 }
 
+void log_info(){
+    // when we posess all chunck, print the data string
+    end = clock();
+    cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+    printf("Now I have all the data, helping others!\n");
+    // log data into file
+    FILE *fp;
+    char filename[42];
+    sprintf(filename, "peer%dlog.txt", MY_ID);
+    fp = fopen(filename, "w+");
+    fprintf(fp, "Log info:\n");
+    fprintf(fp, "Peer id: %d\n", MY_ID);
+    fprintf(fp, "Seconds taken to recieve all packets: %f\n", cpu_time_used);
+    fprintf(fp, "Peers that delivered packets:\n");
+    for (int i = 0; i < fileinfo.chuncks_amount; i++){
+        fprintf(fp, " %d ", fileinfo.chunck_recieved_from[i]);
+    }
+    fprintf(fp, "\n");
+    fprintf(fp, "Data that was delivered:\n");
+    for (int i = 0; i < fileinfo.chuncks_amount; i++){
+        fprintf(fp, "%s", fileinfo.data[i].data);
+    }
+    fprintf(fp, "\n-----\n");
+    fclose(fp);
+}
+
 void *generate_requests()
 {
     // while we miss some data, ask everyone about it
@@ -197,7 +228,7 @@ void *generate_requests()
             if (fileinfo.chuncks_status[i] != 1)
             {
                 // printf("#%d need chunck %d\n", MY_ID, i);
-                for (int j = 0; j < networkinfo.peers_number; j++)
+                for (int j = networkinfo.peers_number - 1; j >= 0; j--)
                 {
                     //sleep(1);
                     usleep(1000 * 100);
@@ -222,19 +253,7 @@ void *generate_requests()
             }
         }
     }
-    // when we posess all chunck, print the data string
-    printf("Now I have all the data:\n");
-    for (int i = 0; i < fileinfo.chuncks_amount; i++)
-    {
-        printf("%s", fileinfo.data[i].data);
-    }
-    printf("\nHelping others to get the data..\n");
-    FILE *fp;
-    char filename[42];
-    sprintf(filename, "results%d.txt", MY_ID);
-    fp = fopen(filename, "w+");
-    fprintf(fp, "This is testing for fprintf...\n");
-    fclose(fp);
+    log_info();
 }
 
 void *generate_responses()
@@ -268,6 +287,7 @@ void *generate_responses()
             pthread_mutex_lock(&chuncks_recieved_mutex);
             fileinfo.chuncks_recieved += 1;
             pthread_mutex_unlock(&chuncks_recieved_mutex);
+            fileinfo.chunck_recieved_from[chunck] = temp.source_id;
             fileinfo.data[chunck] = temp.data_chunck;
         }
         else
@@ -329,6 +349,7 @@ int main(int argc, char *argv[])
         // fill the array with data that we actually have
         for (int i = 0; i < fileinfo.chuncks_amount; i++)
         {
+            fileinfo.chunck_recieved_from[i] = MY_ID;
             fileinfo.data[i].chunck_number = i;
             for (int j = 0; j < BUFLEN; j++)
             {
@@ -346,6 +367,7 @@ int main(int argc, char *argv[])
 
     pthread_t sender, reciever, requests_generator, response_generator;
     printf("Starting application...\n");
+    start = clock();
     pthread_create(&sender, NULL, send_requests, NULL);
     pthread_create(&reciever, NULL, recieve_requests, NULL);
     pthread_create(&requests_generator, NULL, generate_requests, NULL);
