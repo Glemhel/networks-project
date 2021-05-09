@@ -407,7 +407,7 @@ void init_networkinfo()
     {
         for (int j = 0; j < networkinfo.peers_number; j++)
         {
-            networkinfo.peers_graph[i][j] = 0;
+            networkinfo.peers_graph[i][j] = 1;
         }
     }
     // adding some edges to network graph
