@@ -1,5 +1,6 @@
-t
-t.c
-app
-app1
-peer.*
+*
+!image.png
+!application.c
+!README.md
+!description.md
+!run
