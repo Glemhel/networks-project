@@ -2,8 +2,7 @@
 # remove all previous log files
 ls | grep -P "peer[0-9]{1}.*" | xargs -d"\n" rm
 gcc -pthread -o app application.c
-gnome-terminal -e "./app 0" &
-for i in {1..19}
+for i in {0..4}
 do
     gnome-terminal -e "./app $i" &
 done
