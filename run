@@ -1,8 +1,10 @@
 #!/bin/bash
 # remove all previous log files
 ls | grep -P "peer[0-9]{1}.*" | xargs -d"\n" rm
+# compile c program
 gcc -pthread -o app application.c
-for i in {0..4}
+# execute peers
+for i in {0..3}
 do
     gnome-terminal -e "./app $i" &
 done
