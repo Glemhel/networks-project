@@ -13,15 +13,15 @@
 #include <time.h>
 #include <unistd.h>
 
-#define BUFFER_SIZE 512       // size of buffer string to be sent via UDP
-#define START_PORT 5555       // starting port for peers port assignment
-#define LOCALHOST "127.0.0.1" // server for testing
-#define FILENAME "image_large.jpg"  // name of the file to be transferred
-#define NPEERS 10             // number of peers in the network
-#define MAX_CHUNCKS 1000000   // maximum number of chuncks in the file
-#define QUEUE_LENGTH_MAX 2000 // maximum length of requests/response queue
-#define SENDER_PEER_ID 0      // id of peer which is sender peer
-#define LOCAL_DEBUG 1         // 1 if all peers are locally allocated, 0 if peers are configured manually
+#define BUFFER_SIZE 512            // size of buffer string to be sent via UDP
+#define START_PORT 5555            // starting port for peers port assignment
+#define LOCALHOST "127.0.0.1"      // server for testing
+#define FILENAME "image_large.jpg" // name of the file to be transferred
+#define NPEERS 5                   // number of peers in the network
+#define MAX_CHUNCKS 1000000        // maximum number of chuncks in the file
+#define QUEUE_LENGTH_MAX 2000      // maximum length of requests/response queue
+#define SENDER_PEER_ID 0           // id of peer which is sender peer
+#define LOCAL_DEBUG 1              // 1 if all peers are locally allocated, 0 if peers are configured manually
 
 int MY_ID = 0; // id of this peer - defined as command line parameter
 
@@ -216,7 +216,7 @@ void *send_requests()
         si_other.sin_port = htons(port);
         queue_pop(&outgoing_requests);
         outgoing_requests_length -= 1;
-        // unlock reourse for other threads
+        // unlock resourse for other threads
         pthread_mutex_unlock(&outgoing_requests_mutex);
         // set ip address for recipient
         if (inet_aton(networkinfo.peers[temp.destination_id].ip_address, &si_other.sin_addr) == 0)
@@ -267,7 +267,7 @@ void log_info()
 // routine to generate requests for data until we get all the file's chuncks
 void *generate_requests()
 {
-    // while we don't posses every chunck, generate requests
+    // while we don't possess every chunck, generate requests
     while (fileinfo.chuncks_recieved != fileinfo.chuncks_amount)
     {
         //debug printing
@@ -411,7 +411,10 @@ void init_networkinfo()
         {
             for (int j = 0; j < networkinfo.peers_number; j++)
             {
-                networkinfo.peers_graph[i][j] = 1;
+                if (i != j)
+                    networkinfo.peers_graph[i][j] = 1;
+                else
+                    networkinfo.peers_graph[i][j] = 0;
             }
         }
         // adding some edges to network graph
@@ -494,7 +497,6 @@ void init_fileinfo()
 
         struct sockaddr_in server, client;
         int s, slen = sizeof(server);
-        struct DataPacket temp;
         // create socket
         if ((s = socket(AF_INET, SOCK_STREAM, IPPROTO_IP)) == -1)
         {
@@ -515,13 +517,12 @@ void init_fileinfo()
         };
         // listen to this socket
         listen(s, 11);
-        int s1;
         printf("Waiting for peers\n");
         // accepting connections from clients
         for (int i = 0; i < networkinfo.peers_number - 1; i++)
         {
             // accept connection
-            s1 = accept(s, (struct sockaddr *)&client, (socklen_t *)&slen);
+            int s1 = accept(s, (struct sockaddr *)&client, (socklen_t *)&slen);
             // send FileMetaData
             send(s1, &fmd, sizeof(fmd), 0);
         }
@@ -541,9 +542,9 @@ void init_fileinfo()
             die("socket");
         }
         // fill server information - peer 0 is sender by default
-        server.sin_addr.s_addr = inet_addr(networkinfo.peers[0].ip_address);
+        server.sin_addr.s_addr = inet_addr(networkinfo.peers[SENDER_PEER_ID].ip_address);
         server.sin_family = AF_INET;
-        server.sin_port = htons(networkinfo.peers[0].port_recieve);
+        server.sin_port = htons(networkinfo.peers[SENDER_PEER_ID].port_recieve);
         // wait for connection
         int res;
         printf("Trying to connect\n");
@@ -600,7 +601,7 @@ int main(int argc, char *argv[])
     pthread_join(reciever, NULL);
     pthread_join(requests_generator, NULL);
     pthread_join(response_generator, NULL);
-    // destory mutexes on end - altough these lines of code are never reached
+    // destroy mutexes on end - altough these lines of code are never reached
     pthread_mutex_destroy(&incoming_requests_mutex);
     pthread_mutex_destroy(&outgoing_requests_mutex);
     pthread_mutex_destroy(&chuncks_recieved_mutex);
