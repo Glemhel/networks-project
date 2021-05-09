@@ -13,15 +13,15 @@
 #include <time.h>
 #include <unistd.h>
 
-#define BUFFER_SIZE 512            // size of buffer string to be sent via UDP
-#define START_PORT 5555            // starting port for peers port assignment
-#define LOCALHOST "127.0.0.1"      // server for testing
-#define FILENAME "image_large.jpg" // name of the file to be transferred
-#define NPEERS 5                   // number of peers in the network
-#define MAX_CHUNCKS 1000000        // maximum number of chuncks in the file
-#define QUEUE_LENGTH_MAX 2000      // maximum length of requests/response queue
-#define SENDER_PEER_ID 0           // id of peer which is sender peer
-#define LOCAL_DEBUG 1              // 1 if all peers are locally allocated, 0 if peers are configured manually
+#define BUFFER_SIZE 512       // size of buffer string to be sent via UDP
+#define START_PORT 5555       // starting port for peers port assignment
+#define LOCALHOST "127.0.0.1" // server for testing
+#define FILENAME "image.png"  // name of the file to be transferred
+#define NPEERS 4              // number of peers in the network
+#define MAX_CHUNCKS 1000000   // maximum number of chuncks in the file
+#define QUEUE_LENGTH_MAX 2000 // maximum length of requests/response queue
+#define SENDER_PEER_ID 0      // id of peer which is sender peer
+#define LOCAL_DEBUG 1         // 1 if all peers are locally allocated, 0 if peers are configured manually
 
 int MY_ID = 0; // id of this peer - defined as command line parameter
 
@@ -448,12 +448,15 @@ void init_networkinfo()
             }
         }
         // ip addresses and ports assignment
-        char *ip1 = "10.91.50.14";
-        char *ip0 = "10.91.54.113";
+        char *ip0 = "10.91.50.14";
+        char *ip1 = "10.91.54.113";
+        //char *ip2 = "10.91.52.183";
         memcpy(networkinfo.peers[0].ip_address, ip0, strlen(ip0));
         networkinfo.peers[0].port_recieve = START_PORT;
         memcpy(networkinfo.peers[1].ip_address, ip1, strlen(ip1));
         networkinfo.peers[1].port_recieve = START_PORT;
+        //memcpy(networkinfo.peers[2].ip_address, ip2, strlen(ip2));
+        //networkinfo.peers[2].port_recieve = START_PORT;
     }
 }
 
