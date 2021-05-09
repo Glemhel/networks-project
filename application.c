@@ -21,6 +21,7 @@
 #define MAX_CHUNCKS 1000000   // maximum number of chuncks in the file
 #define QUEUE_LENGTH_MAX 500  // maximum length of requests/response queue
 #define SENDER_PEER_ID 0      // id of peer which is sender peer
+#define LOCAL_DEBUG 1         // 1 if all peers are locally allocated, 0 if peers are configured manually
 
 int MY_ID = 0; // id of this peer - defined as command line parameter
 
@@ -396,37 +397,60 @@ void init_queues()
 // initialize network information - necessary to know our peers' ip's, ports, etc.
 void init_networkinfo()
 {
-    networkinfo.peers_number = NPEERS; // number of peers
-    for (int i = 0; i < NPEERS; i++)
+    // if all peers are local
+    if (LOCAL_DEBUG)
     {
-        strcpy(networkinfo.peers[i].ip_address, LOCALHOST); // ip address of peer
-        networkinfo.peers[i].port_recieve = START_PORT + i; // port of peer to send data to
-    }
-    // initializing peers availability graph - default is 0 for everything - network without connection
-    for (int i = 0; i < networkinfo.peers_number; i++)
-    {
-        for (int j = 0; j < networkinfo.peers_number; j++)
+        networkinfo.peers_number = NPEERS; // number of peers
+        for (int i = 0; i < NPEERS; i++)
         {
-            networkinfo.peers_graph[i][j] = 1;
+            strcpy(networkinfo.peers[i].ip_address, LOCALHOST); // ip address of peer
+            networkinfo.peers[i].port_recieve = START_PORT + i; // port of peer to send data to
+        }
+        // initializing peers availability graph - default is 0 for everything - network without connection
+        for (int i = 0; i < networkinfo.peers_number; i++)
+        {
+            for (int j = 0; j < networkinfo.peers_number; j++)
+            {
+                networkinfo.peers_graph[i][j] = 1;
+            }
+        }
+        // adding some edges to network graph
+        int edges_number = 9;
+        struct edge edges[] = {
+            {0, 1},
+            {0, 2},
+            {1, 3},
+            {1, 4},
+            {2, 3},
+            {2, 7},
+            {3, 5},
+            {5, 7},
+            {3, 6}};
+        // setting peers to be able to communicate
+        for (int i = 0; i < edges_number; i++)
+        {
+            networkinfo.peers_graph[edges[i].from][edges[i].to] = 1;
+            networkinfo.peers_graph[edges[i].to][edges[i].from] = 1;
         }
     }
-    // adding some edges to network graph
-    int edges_number = 9;
-    struct edge edges[] = {
-        {0, 1},
-        {0, 2},
-        {1, 3},
-        {1, 4},
-        {2, 3},
-        {2, 7},
-        {3, 5},
-        {5, 7},
-        {3, 6}};
-    // setting peers to be able to communicate
-    for (int i = 0; i < edges_number; i++)
+    else
     {
-        networkinfo.peers_graph[edges[i].from][edges[i].to] = 1;
-        networkinfo.peers_graph[edges[i].to][edges[i].from] = 1;
+        // manually configure network information
+        networkinfo.peers_number = 2;
+        for (int i = 0; i < networkinfo.peers_number; i++)
+        {
+            for (int j = 0; j < networkinfo.peers_number; j++)
+            {
+                networkinfo.peers_graph[i][j] = 1;
+            }
+        }
+        // ip addresses and ports assignment
+        char *ip0 = "10.91.50.14";
+        char *ip1 = "10.91.50.113";
+        memcpy(networkinfo.peers[0].ip_address, ip0, sizeof(ip0));
+        networkinfo.peers[0].port_recieve = 5555;
+        memcpy(networkinfo.peers[1].ip_address, ip1, sizeof(ip1));
+        networkinfo.peers[0].port_recieve = 5555;
     }
 }
 
