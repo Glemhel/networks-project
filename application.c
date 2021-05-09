@@ -17,11 +17,11 @@
 #define START_PORT 5555       // starting port for peers port assignment
 #define LOCALHOST "127.0.0.1" // server for testing
 #define FILENAME "image.png"  // name of the file to be transferred
-#define NPEERS 8              // number of peers in the network
+#define NPEERS 2              // number of peers in the network
 #define MAX_CHUNCKS 1000000   // maximum number of chuncks in the file
 #define QUEUE_LENGTH_MAX 500  // maximum length of requests/response queue
 #define SENDER_PEER_ID 0      // id of peer which is sender peer
-#define LOCAL_DEBUG 1         // 1 if all peers are locally allocated, 0 if peers are configured manually
+#define LOCAL_DEBUG 0         // 1 if all peers are locally allocated, 0 if peers are configured manually
 
 int MY_ID = 0; // id of this peer - defined as command line parameter
 
@@ -446,11 +446,11 @@ void init_networkinfo()
         }
         // ip addresses and ports assignment
         char *ip0 = "10.91.50.14";
-        char *ip1 = "10.91.50.113";
-        memcpy(networkinfo.peers[0].ip_address, ip0, sizeof(ip0));
-        networkinfo.peers[0].port_recieve = 5555;
-        memcpy(networkinfo.peers[1].ip_address, ip1, sizeof(ip1));
-        networkinfo.peers[0].port_recieve = 5555;
+        char *ip1 = "10.91.54.113";
+        memcpy(networkinfo.peers[0].ip_address, ip0, strlen(ip0));
+        networkinfo.peers[0].port_recieve = START_PORT;
+        memcpy(networkinfo.peers[1].ip_address, ip1, strlen(ip1));
+        networkinfo.peers[1].port_recieve = START_PORT;
     }
 }
 
@@ -509,7 +509,10 @@ void init_fileinfo()
         // set socket to be reusable to be able to bind to it
         setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
         // bind the socket
-        bind(s, (struct sockaddr *)&server, sizeof(server));
+        if (bind(s, (struct sockaddr *)&server, sizeof(server)) < 0)
+        {
+            printf("fail to bind\n");
+        };
         // listen to this socket
         listen(s, 11);
         int s1;
@@ -523,6 +526,7 @@ void init_fileinfo()
             send(s1, &fmd, sizeof(fmd), 0);
         }
         // close socket
+        printf("All peers got their info\n");
         close(s);
     }
     else
